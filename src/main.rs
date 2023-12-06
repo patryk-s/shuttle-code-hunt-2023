@@ -5,6 +5,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use serde_json::json;
 
 async fn hello_world() -> &'static str {
     "Ho, ho, ho!"
@@ -16,9 +17,21 @@ async fn main() -> shuttle_axum::ShuttleAxum {
         .route("/", get(hello_world))
         .route("/1/*nums", get(task1))
         .route("/4/strength", post(task4))
-        .route("/4/contest", post(task4_contest));
+        .route("/4/contest", post(task4_contest))
+        .route("/6", post(task6));
 
     Ok(router.into())
+}
+
+async fn task6(body: String) -> impl IntoResponse {
+    let elf_count = body.matches("elf").count();
+    let shelf_count = body.matches("elf on a shelf").count();
+    let no_elf_count = body.replace("elf on a shelf", "").matches("shelf").count();
+    Json(json!({
+        "elf": elf_count,
+        "elf on a shelf": shelf_count,
+        "shelf with no elf on it": no_elf_count,
+    }))
 }
 
 #[derive(Debug, Deserialize)]
