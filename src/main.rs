@@ -1,5 +1,7 @@
+use std::{collections::BTreeMap, sync::Arc};
+
 use axum::{
-    extract::Path,
+    extract::{Path, State},
     http::StatusCode,
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -10,14 +12,20 @@ use base64::{engine::general_purpose, Engine as _};
 use rustemon::{client::RustemonClient, pokemon::pokemon};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tokio::{sync::Mutex, time::Instant};
 use tower_http::services::ServeDir;
 
 async fn hello_world() -> &'static str {
     "Ho, ho, ho!"
 }
 
+type Timekeeper = Arc<Mutex<BTreeMap<String, Instant>>>;
+
 #[shuttle_runtime::main]
 async fn main() -> shuttle_axum::ShuttleAxum {
+    // initialize in-memory database
+    let db = Timekeeper::new(Mutex::new(BTreeMap::new()));
+
     let router = Router::new()
         .route("/", get(hello_world))
         .route("/-1/error", get(task_error))
@@ -28,9 +36,32 @@ async fn main() -> shuttle_axum::ShuttleAxum {
         .route("/7/decode", get(task7))
         .route("/8/weight/:id", get(task8))
         .route("/8/drop/:id", get(task8_part2))
-        .nest_service("/11/assets", ServeDir::new("assets"));
+        .nest_service("/11/assets", ServeDir::new("assets"))
+        .nest(
+            "/12",
+            Router::new()
+                .route("/save/:text", post(save_task12))
+                .route("/load/:text", get(load_task12))
+                .with_state(db.clone()),
+        );
 
     Ok(router.into())
+}
+
+async fn load_task12(State(db): State<Timekeeper>, Path(text): Path<String>) -> impl IntoResponse {
+    match db.lock().await.get(&text) {
+        Some(time) => time.elapsed().as_secs().to_string().into_response(),
+        None => (StatusCode::NOT_FOUND, "No such string").into_response(),
+    }
+}
+
+async fn save_task12(State(db): State<Timekeeper>, Path(text): Path<String>) -> impl IntoResponse {
+    let time = Instant::now();
+    db.lock_owned()
+        .await
+        .entry(text)
+        .and_modify(|t| *t = time)
+        .or_insert(time);
 }
 
 #[axum::debug_handler]
