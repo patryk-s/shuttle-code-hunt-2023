@@ -14,6 +14,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::{sync::Mutex, time::Instant};
 use tower_http::services::ServeDir;
+use ulid::Ulid;
+use uuid::Uuid;
 
 async fn hello_world() -> &'static str {
     "Ho, ho, ho!"
@@ -42,10 +44,21 @@ async fn main() -> shuttle_axum::ShuttleAxum {
             Router::new()
                 .route("/save/:text", post(save_task12))
                 .route("/load/:text", get(load_task12))
-                .with_state(db.clone()),
+                .with_state(db.clone())
+                .route("/ulids", post(task12_ulid)),
         );
 
     Ok(router.into())
+}
+
+fn ulid2uuid(ulid: String) -> Uuid {
+    Ulid::from_string(&ulid).unwrap().into()
+}
+
+async fn task12_ulid(Json(ulids): Json<Vec<String>>) -> impl IntoResponse {
+    let mut uuids: Vec<Uuid> = ulids.into_iter().map(ulid2uuid).collect();
+    uuids.reverse();
+    Json(uuids)
 }
 
 async fn load_task12(State(db): State<Timekeeper>, Path(text): Path<String>) -> impl IntoResponse {
