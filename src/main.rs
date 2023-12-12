@@ -1,11 +1,16 @@
 use axum::{
     extract::Path,
+    http::StatusCode,
     response::{Html, IntoResponse},
     routing::{get, post},
     Json, Router,
 };
+use axum_extra::extract::CookieJar;
+use base64::{engine::general_purpose, Engine as _};
+use rustemon::{client::RustemonClient, pokemon::pokemon};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tower_http::services::ServeDir;
 
 async fn hello_world() -> &'static str {
     "Ho, ho, ho!"
@@ -15,23 +20,87 @@ async fn hello_world() -> &'static str {
 async fn main() -> shuttle_axum::ShuttleAxum {
     let router = Router::new()
         .route("/", get(hello_world))
+        .route("/-1/error", get(task_error))
         .route("/1/*nums", get(task1))
         .route("/4/strength", post(task4))
         .route("/4/contest", post(task4_contest))
-        .route("/6", post(task6));
+        .route("/6", post(task6))
+        .route("/7/decode", get(task7))
+        .route("/8/weight/:id", get(task8))
+        .route("/8/drop/:id", get(task8_part2))
+        .nest_service("/11/assets", ServeDir::new("assets"));
 
     Ok(router.into())
 }
 
+#[axum::debug_handler]
+async fn task8_part2(Path(id): Path<i64>) -> impl IntoResponse {
+    let rustemon_client = RustemonClient::default();
+    const G: f64 = 9.825;
+    let height = 10.0;
+    let velocity_i = (2.0 * G * height).sqrt();
+    match pokemon::get_by_id(id, &rustemon_client).await {
+        Ok(pokemon) => Ok((pokemon.weight as f64 / 10.0 * velocity_i).to_string()),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+#[axum::debug_handler]
+async fn task8(Path(id): Path<i64>) -> impl IntoResponse {
+    let rustemon_client = RustemonClient::default();
+    match pokemon::get_by_id(id, &rustemon_client).await {
+        Ok(pokemon) => Ok((pokemon.weight as f64 / 10.0).to_string()),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, e.to_string())),
+    }
+}
+
+async fn task7(jar: CookieJar) -> impl IntoResponse {
+    if let Some(recipe) = jar.get("recipe") {
+        let data = recipe.value();
+        let data = general_purpose::STANDARD.decode(data).unwrap();
+        let data = String::from_utf8(data).unwrap();
+        println!("{data}");
+        Html(data)
+    } else {
+        Html("Not found".to_string())
+    }
+}
+
+fn parse_elf(input: &str) -> usize {
+    input.matches("elf").count()
+}
+
+fn parse_shelves(input: &str) -> usize {
+    let shelves = "elf on a shelf";
+    input
+        .as_bytes()
+        .windows(shelves.len())
+        .filter(|s| std::str::from_utf8(s).unwrap() == shelves)
+        .count()
+}
+
 async fn task6(body: String) -> impl IntoResponse {
-    let elf_count = body.matches("elf").count();
-    let shelf_count = body.matches("elf on a shelf").count();
-    let no_elf_count = body.replace("elf on a shelf", "").matches("shelf").count();
+    let elf_count = parse_elf(&body);
+    let shelf_count = parse_shelves(&body);
+    let no_elf_count = body.matches("shelf").count() - shelf_count;
     Json(json!({
         "elf": elf_count,
         "elf on a shelf": shelf_count,
         "shelf with no elf on it": no_elf_count,
     }))
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Deserialize)]
+struct Reindeer1 {
+    name: String,
+    strength: i32,
+}
+
+impl std::iter::Sum<Reindeer1> for i32 {
+    fn sum<I: Iterator<Item = Reindeer1>>(iter: I) -> Self {
+        iter.fold(0, |acc, s| acc + s.strength)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -45,12 +114,6 @@ struct Reindeer {
     favorite_food: String,
     #[serde(rename(deserialize = "cAnD13s_3ATeN-yesT3rdAy"))]
     candies_eaten_yesterday: i32,
-}
-
-impl std::iter::Sum<Reindeer> for i32 {
-    fn sum<I: Iterator<Item = Reindeer>>(iter: I) -> Self {
-        iter.fold(0, |acc, s| acc + s.strength)
-    }
 }
 
 #[derive(Debug, Serialize)]
@@ -103,7 +166,7 @@ async fn task4_contest(Json(input): Json<Vec<Reindeer>>) -> impl IntoResponse {
     })
 }
 
-async fn task4(Json(input): Json<Vec<Reindeer>>) -> impl IntoResponse {
+async fn task4(Json(input): Json<Vec<Reindeer1>>) -> impl IntoResponse {
     let sum: i32 = input.into_iter().sum();
     Html(sum.to_string())
 }
@@ -117,4 +180,26 @@ async fn task1(Path(params): Path<String>) -> impl IntoResponse {
         .pow(3)
         .to_string(),
     )
+}
+async fn task_error() -> impl IntoResponse {
+    StatusCode::INTERNAL_SERVER_ERROR
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const INPUT: &str = "In Belfast I heard an elf on a shelf on a shelf on a";
+
+    #[test]
+    fn elf_count() {
+        let output = parse_elf(INPUT);
+        assert_eq!(output, 4);
+    }
+
+    #[test]
+    fn shelves_count() {
+        let output = parse_shelves(INPUT);
+        assert_eq!(output, 2);
+    }
 }
