@@ -14,6 +14,7 @@ use image::{io::Reader, DynamicImage};
 use rustemon::{client::RustemonClient, pokemon::pokemon};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use sqlx::PgPool;
 use tokio::{sync::Mutex, time::Instant};
 use tower_http::services::ServeDir;
 use ulid::Ulid;
@@ -26,7 +27,7 @@ async fn hello_world() -> &'static str {
 type Timekeeper = Arc<Mutex<BTreeMap<String, Instant>>>;
 
 #[shuttle_runtime::main]
-async fn main() -> shuttle_axum::ShuttleAxum {
+async fn main(#[shuttle_shared_db::Postgres] pool: PgPool) -> shuttle_axum::ShuttleAxum {
     // initialize in-memory database
     let db = Timekeeper::new(Mutex::new(BTreeMap::new()));
 
@@ -50,9 +51,22 @@ async fn main() -> shuttle_axum::ShuttleAxum {
                 .with_state(db.clone())
                 .route("/ulids", post(task12_ulid))
                 .route("/ulids/:weekday", post(task12_weekday)),
+        )
+        .nest(
+            "/13",
+            Router::new().route("/sql", get(task13)).with_state(pool),
         );
 
     Ok(router.into())
+}
+
+async fn task13(State(db): State<PgPool>) -> impl IntoResponse {
+    let res: i32 = sqlx::query_scalar!(r#"SELECT 20231213"#)
+        .fetch_one(&db)
+        .await
+        .unwrap()
+        .unwrap();
+    res.to_string()
 }
 
 async fn task12_weekday(
