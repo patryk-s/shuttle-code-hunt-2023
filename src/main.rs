@@ -9,6 +9,7 @@ use axum::{
 };
 use axum_extra::extract::CookieJar;
 use base64::{engine::general_purpose, Engine as _};
+use chrono::{DateTime, Datelike, Utc, Weekday};
 use rustemon::{client::RustemonClient, pokemon::pokemon};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -42,13 +43,54 @@ async fn main() -> shuttle_axum::ShuttleAxum {
         .nest(
             "/12",
             Router::new()
-                .route("/save/:text", post(save_task12))
-                .route("/load/:text", get(load_task12))
+                .route("/save/:text", post(task12_save))
+                .route("/load/:text", get(task12_load))
                 .with_state(db.clone())
-                .route("/ulids", post(task12_ulid)),
+                .route("/ulids", post(task12_ulid))
+                .route("/ulids/:weekday", post(task12_weekday)),
         );
 
     Ok(router.into())
+}
+
+async fn task12_weekday(
+    Path(weekday): Path<u8>,
+    Json(ulids): Json<Vec<String>>,
+) -> impl IntoResponse {
+    let weekday = Weekday::try_from(weekday).unwrap();
+    let ulids: Vec<Ulid> = ulids
+        .iter()
+        .map(|s| Ulid::from_string(s).unwrap())
+        .collect();
+
+    let mut christmas = 0_u32;
+    let mut weekday_count = 0_u32;
+    let mut in_future = 0_u32;
+    let mut lsb = 0_u32;
+    let now = Utc::now();
+
+    for u in ulids.into_iter() {
+        let utime: DateTime<Utc> = u.datetime().into();
+        if utime > now {
+            in_future += 1;
+        }
+        if utime.weekday() == weekday {
+            weekday_count += 1;
+        }
+        if utime.day() == 24 && utime.month() == 12 {
+            christmas += 1;
+        }
+        if u.random() % 2 != 0 {
+            lsb += 1;
+        }
+    }
+
+    Json(json!({
+        "christmas eve": christmas,
+        "weekday": weekday_count,
+        "in the future": in_future,
+        "LSB is 1": lsb,
+    }))
 }
 
 fn ulid2uuid(ulid: String) -> Uuid {
@@ -61,14 +103,14 @@ async fn task12_ulid(Json(ulids): Json<Vec<String>>) -> impl IntoResponse {
     Json(uuids)
 }
 
-async fn load_task12(State(db): State<Timekeeper>, Path(text): Path<String>) -> impl IntoResponse {
+async fn task12_load(State(db): State<Timekeeper>, Path(text): Path<String>) -> impl IntoResponse {
     match db.lock().await.get(&text) {
         Some(time) => time.elapsed().as_secs().to_string().into_response(),
         None => (StatusCode::NOT_FOUND, "No such string").into_response(),
     }
 }
 
-async fn save_task12(State(db): State<Timekeeper>, Path(text): Path<String>) -> impl IntoResponse {
+async fn task12_save(State(db): State<Timekeeper>, Path(text): Path<String>) -> impl IntoResponse {
     let time = Instant::now();
     db.lock_owned()
         .await
