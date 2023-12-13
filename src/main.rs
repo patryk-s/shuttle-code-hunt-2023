@@ -1,7 +1,7 @@
-use std::{collections::BTreeMap, sync::Arc};
+use std::{collections::BTreeMap, io::Cursor, sync::Arc};
 
 use axum::{
-    extract::{Path, State},
+    extract::{Multipart, Path, State},
     http::StatusCode,
     response::{Html, IntoResponse},
     routing::{get, post},
@@ -10,6 +10,7 @@ use axum::{
 use axum_extra::extract::CookieJar;
 use base64::{engine::general_purpose, Engine as _};
 use chrono::{DateTime, Datelike, Utc, Weekday};
+use image::{io::Reader, DynamicImage};
 use rustemon::{client::RustemonClient, pokemon::pokemon};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -40,6 +41,7 @@ async fn main() -> shuttle_axum::ShuttleAxum {
         .route("/8/weight/:id", get(task8))
         .route("/8/drop/:id", get(task8_part2))
         .nest_service("/11/assets", ServeDir::new("assets"))
+        .route("/11/red_pixels", post(task11))
         .nest(
             "/12",
             Router::new()
@@ -117,6 +119,28 @@ async fn task12_save(State(db): State<Timekeeper>, Path(text): Path<String>) -> 
         .entry(text)
         .and_modify(|t| *t = time)
         .or_insert(time);
+}
+
+async fn task11(mut multipart: Multipart) -> impl IntoResponse {
+    while let Some(field) = multipart.next_field().await.unwrap() {
+        if field.name().unwrap() == "image" {
+            let data = field.bytes().await.unwrap();
+            let image = Reader::new(Cursor::new(data))
+                .with_guessed_format()
+                .unwrap()
+                .decode()
+                .unwrap();
+            return num_magical_red(image).to_string().into_response();
+        }
+    }
+    (StatusCode::NOT_FOUND).into_response()
+}
+
+fn num_magical_red(img: DynamicImage) -> usize {
+    img.as_bytes()
+        .chunks(3)
+        .filter(|p| p[0] > p[1].saturating_add(p[2]))
+        .count()
 }
 
 #[axum::debug_handler]
@@ -287,5 +311,14 @@ mod tests {
     fn shelves_count() {
         let output = parse_shelves(INPUT);
         assert_eq!(output, 2);
+    }
+
+    #[test]
+    fn magic_red() {
+        let img = image::open("assets/decoration.png").unwrap();
+        let output = num_magical_red(img);
+        let expected = 73034;
+
+        assert_eq!(output, expected);
     }
 }
