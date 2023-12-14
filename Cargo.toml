@@ -4,6 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+askama = { version = "0.12.1", features = ["with-axum"] }
+askama_axum = "0.3.0"
 axum = { version = "0.6.20", features = ["macros", "multipart"] }
 axum-extra = { version = "0.8.0", features = ["cookie"] }
 base64 = "0.21.5"

@@ -1,5 +1,6 @@
 use std::{collections::BTreeMap, io::Cursor, sync::Arc};
 
+use askama::Template;
 use axum::{
     extract::{Multipart, Path, State},
     http::StatusCode,
@@ -55,9 +56,34 @@ async fn main(#[shuttle_shared_db::Postgres] pool: PgPool) -> shuttle_axum::Shut
         .nest(
             "/13",
             Router::new().route("/sql", get(task13)).with_state(pool),
+        )
+        .nest(
+            "/14",
+            Router::new()
+                .route("/unsafe", post(task14_unsafe))
+                .route("/safe", post(task14_safe)),
         );
 
     Ok(router.into())
+}
+
+#[derive(Deserialize, Serialize, Template)]
+#[template(path = "task14.html")]
+struct Content {
+    content: String,
+    not_safe: Option<bool>,
+}
+
+async fn task14_unsafe(Json(data): Json<Content>) -> impl IntoResponse {
+    let data = Content {
+        not_safe: Some(true),
+        ..data
+    };
+    data.into_response()
+}
+
+async fn task14_safe(Json(data): Json<Content>) -> impl IntoResponse {
+    data.into_response()
 }
 
 async fn task13(State(db): State<PgPool>) -> impl IntoResponse {

@@ -1,0 +1,15 @@
+<html>
+  <head>
+    <title>CCH23 Day 14</title>
+  </head>
+  <body>
+    {%- match not_safe %}
+      {% when Some with (ns) %}
+        {%- if ns %}
+    {{ content|safe }}
+        {%- endif -%}
+      {% when None %}
+    {{ content }}
+    {%- endmatch %}
+  </body>
+</html>
